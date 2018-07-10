@@ -152,6 +152,8 @@ typedef NS_ENUM(NSInteger, INTUHeadingStatus) {
  */
 typedef void(^INTULocationRequestBlock)(CLLocation *currentLocation, INTULocationAccuracy achievedAccuracy, INTULocationStatus status);
 
+typedef void(^INTULocationPlacemarkRequestBlock)(CLLocation *currentLocation, CLPlacemark *mark, INTULocationAccuracy achievedAccuracy, INTULocationStatus status);
+
 /**
  A block type for a heading request, which is executed when the request succeeds.
 

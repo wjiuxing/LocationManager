@@ -69,6 +69,8 @@
 // @[ INTUHeadingRequest *headingRequest1, INTUHeadingRequest *headingRequest2, ... ]
 @property (nonatomic, strong) __INTU_GENERICS(NSArray, INTUHeadingRequest *) *headingRequests;
 
+@property (nonatomic, strong) CLGeocoder *geocoder;
+
 @end
 
 
@@ -148,6 +150,15 @@ static id _sharedInstance;
     return self;
 }
 
+- (CLGeocoder *)geocoder
+{
+    if (nil == _geocoder) {
+        _geocoder = [[CLGeocoder alloc] init];
+    }
+    
+    return _geocoder;
+}
+
 #pragma mark Public location methods
 
 /**
@@ -171,6 +182,16 @@ static id _sharedInstance;
                                             timeout:timeout
                                delayUntilAuthorized:NO
                                               block:block];
+}
+
+- (INTULocationRequestID)requestLocationPlacemarkWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
+                                                             timeout:(NSTimeInterval)timeout
+                                                               block:(INTULocationPlacemarkRequestBlock)block;
+{
+    return [self requestLocationPlacemarkWithDesiredAccuracy:desiredAccuracy
+                                                     timeout:timeout
+                                        delayUntilAuthorized:NO
+                                                       block:block];
 }
 
 /**
@@ -218,6 +239,34 @@ static id _sharedInstance;
     return locationRequest.requestID;
 }
 
+- (INTULocationRequestID)requestLocationPlacemarkWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
+                                                             timeout:(NSTimeInterval)timeout
+                                                delayUntilAuthorized:(BOOL)delayUntilAuthorized
+                                                               block:(INTULocationPlacemarkRequestBlock)block;
+{
+    NSAssert([NSThread isMainThread], @"INTULocationManager should only be called from the main thread.");
+    
+    if (desiredAccuracy == INTULocationAccuracyNone) {
+        NSAssert(desiredAccuracy != INTULocationAccuracyNone, @"INTULocationAccuracyNone is not a valid desired accuracy.");
+        desiredAccuracy = INTULocationAccuracyCity; // default to the lowest valid desired accuracy
+    }
+    
+    INTULocationRequest *locationRequest = [[INTULocationRequest alloc] initWithType:INTULocationRequestTypeSingle];
+    locationRequest.delegate = self;
+    locationRequest.desiredAccuracy = desiredAccuracy;
+    locationRequest.timeout = timeout;
+    locationRequest.placemarkBlock = block;
+    
+    BOOL deferTimeout = delayUntilAuthorized && ([CLLocationManager authorizationStatus] == kCLAuthorizationStatusNotDetermined);
+    if (!deferTimeout) {
+        [locationRequest startTimeoutTimerIfNeeded];
+    }
+    
+    [self addLocationRequest:locationRequest];
+    
+    return locationRequest.requestID;
+}
+
 /**
  Creates a subscription for location updates that will execute the block once per update indefinitely (until canceled), regardless of the accuracy of each location.
  This method instructs location services to use the highest accuracy available (which also requires the most power).
@@ -232,6 +281,12 @@ static id _sharedInstance;
 {
     return [self subscribeToLocationUpdatesWithDesiredAccuracy:INTULocationAccuracyRoom
                                                          block:block];
+}
+
+- (INTULocationRequestID)subscribeToLocationPlacemarkUpdatesWithBlock:(INTULocationPlacemarkRequestBlock)block;
+{
+    return [self subscribeToLocationPlacemarkUpdatesWithDesiredAccuracy:INTULocationAccuracyRoom
+                                                                  block:block];
 }
 
 /**
@@ -260,6 +315,20 @@ static id _sharedInstance;
     return locationRequest.requestID;
 }
 
+- (INTULocationRequestID)subscribeToLocationPlacemarkUpdatesWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
+                                                                          block:(INTULocationPlacemarkRequestBlock)block;
+{
+    NSAssert([NSThread isMainThread], @"INTULocationManager should only be called from the main thread.");
+    
+    INTULocationRequest *locationRequest = [[INTULocationRequest alloc] initWithType:INTULocationRequestTypeSubscription];
+    locationRequest.desiredAccuracy = desiredAccuracy;
+    locationRequest.placemarkBlock = block;
+    
+    [self addLocationRequest:locationRequest];
+    
+    return locationRequest.requestID;
+}
+
 /**
  Creates a subscription for significant location changes that will execute the block once per change indefinitely (until canceled).
  If an error occurs, the block will execute with a status other than INTULocationStatusSuccess, and the subscription will be canceled automatically.
@@ -275,6 +344,18 @@ static id _sharedInstance;
     
     INTULocationRequest *locationRequest = [[INTULocationRequest alloc] initWithType:INTULocationRequestTypeSignificantChanges];
     locationRequest.block = block;
+    
+    [self addLocationRequest:locationRequest];
+    
+    return locationRequest.requestID;
+}
+
+- (INTULocationRequestID)subscribeToSignificantLocationPlacemarkChangesWithBlock:(INTULocationPlacemarkRequestBlock)block;
+{
+    NSAssert([NSThread isMainThread], @"INTULocationManager should only be called from the main thread.");
+    
+    INTULocationRequest *locationRequest = [[INTULocationRequest alloc] initWithType:INTULocationRequestTypeSignificantChanges];
+    locationRequest.placemarkBlock = block;
     
     [self addLocationRequest:locationRequest];
     
@@ -663,16 +744,51 @@ static id _sharedInstance;
     CLLocation *currentLocation = self.currentLocation;
     INTULocationAccuracy achievedAccuracy = [self achievedAccuracyForLocation:currentLocation];
     
-    // INTULocationManager is not thread safe and should only be called from the main thread, so we should already be executing on the main thread now.
-    // dispatch_async is used to ensure that the completion block for a request is not executed before the request ID is returned, for example in the
-    // case where the user has denied permission to access location services and the request is immediately completed with the appropriate error.
-    dispatch_async(dispatch_get_main_queue(), ^{
+    if (locationRequest.placemarkBlock) {
+        [self reverseGeocodeLocation:currentLocation completionHandler:^(CLLocation *location, NSArray<CLPlacemark *> * _Nullable placemarks, NSError * _Nullable error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                locationRequest.placemarkBlock(location, placemarks.firstObject, achievedAccuracy, status);
+            });
+        }];
+    } else {
+        // INTULocationManager is not thread safe and should only be called from the main thread, so we should already be executing on the main thread now.
+        // dispatch_async is used to ensure that the completion block for a request is not executed before the request ID is returned, for example in the
+        // case where the user has denied permission to access location services and the request is immediately completed with the appropriate error.
         if (locationRequest.block) {
-            locationRequest.block(currentLocation, achievedAccuracy, status);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                    locationRequest.block(currentLocation, achievedAccuracy, status);
+            });
         }
-    });
+    }
     
     INTULMLog(@"Location Request completed with ID: %ld, currentLocation: %@, achievedAccuracy: %lu, status: %lu", (long)locationRequest.requestID, currentLocation, (unsigned long) achievedAccuracy, (unsigned long)status);
+}
+
+- (void)reverseGeocodeLocation:(CLLocation *)location completionHandler:(void (^)(CLLocation *location, NSArray<CLPlacemark *> * _Nullable placemarks, NSError * _Nullable error))handler;
+{
+    if (@available(iOS 11.0, *)) {
+        NSLocale *locale = nil;
+        if (self.desiredChinesePlacemark) {
+            locale = [NSLocale localeWithLocaleIdentifier:@"zh_CN"];
+        }
+        
+        [self.geocoder reverseGeocodeLocation:location preferredLocale:locale completionHandler:^(NSArray<CLPlacemark *> * _Nullable placemarks, NSError * _Nullable error) {
+            handler(location, placemarks, error);
+        }];
+    } else {
+        NSArray *currentLanguages = [NSUserDefaults.standardUserDefaults objectForKey:@"AppleLanguages"];
+        if (self.desiredChinesePlacemark) {
+            [NSUserDefaults.standardUserDefaults setObject:@[@"zh-Hans"] forKey:@"AppleLanguages"];
+        }
+        
+        [self.geocoder reverseGeocodeLocation:location completionHandler:^(NSArray<CLPlacemark *> * _Nullable placemarks, NSError * _Nullable error) {
+            if (self.desiredChinesePlacemark) {
+                [NSUserDefaults.standardUserDefaults setObject:currentLanguages forKey:@"AppleLanguages"];
+            }
+            
+            handler(location, placemarks, error);
+        }];
+    }
 }
 
 /**
@@ -689,7 +805,11 @@ static id _sharedInstance;
     // INTULocationManager is not thread safe and should only be called from the main thread, so we should already be executing on the main thread now.
     // dispatch_async is used to ensure that the completion block for a request is not executed before the request ID is returned.
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (locationRequest.block) {
+        if (locationRequest.placemarkBlock) {
+            [self reverseGeocodeLocation:currentLocation completionHandler:^(CLLocation *location, NSArray<CLPlacemark *> * _Nullable placemarks, NSError * _Nullable error) {
+                locationRequest.placemarkBlock(location, placemarks.firstObject, achievedAccuracy, status);
+            }];
+        } else if (locationRequest.block) {
             locationRequest.block(currentLocation, achievedAccuracy, status);
         }
     });

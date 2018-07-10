@@ -79,6 +79,9 @@ typedef NS_ENUM(NSInteger, INTULocationRequestType) {
 /** The block to execute when the location request completes. */
 @property (nonatomic, copy, nullable) INTULocationRequestBlock block;
 
+/** The block to execute when the location/placemark request completes. This block is prior to the INTULocationRequestBlock-typed block */
+@property (nonatomic, copy, nullable) INTULocationPlacemarkRequestBlock placemarkBlock;
+
 /** Designated initializer. Initializes and returns a newly allocated location request object with the specified type. */
 - (instancetype)initWithType:(INTULocationRequestType)type __INTU_DESIGNATED_INITIALIZER;
 

@@ -49,6 +49,8 @@ NS_ASSUME_NONNULL_BEGIN
 /** Returns the singleton instance of this class. */
 + (instancetype)sharedInstance;
 
+@property (nonatomic, assign) BOOL desiredChinesePlacemark;
+
 #pragma mark Location Requests
 
 /**
@@ -64,6 +66,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (INTULocationRequestID)requestLocationWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
                                                     timeout:(NSTimeInterval)timeout
                                                       block:(INTULocationRequestBlock)block;
+
+- (INTULocationRequestID)requestLocationPlacemarkWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
+                                                             timeout:(NSTimeInterval)timeout
+                                                               block:(INTULocationPlacemarkRequestBlock)block;
 
 /**
  Asynchronously requests the current location of the device using location services, optionally delaying the timeout countdown until the user has
@@ -84,6 +90,11 @@ NS_ASSUME_NONNULL_BEGIN
                                        delayUntilAuthorized:(BOOL)delayUntilAuthorized
                                                       block:(INTULocationRequestBlock)block;
 
+- (INTULocationRequestID)requestLocationPlacemarkWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
+                                                             timeout:(NSTimeInterval)timeout
+                                                delayUntilAuthorized:(BOOL)delayUntilAuthorized
+                                                               block:(INTULocationPlacemarkRequestBlock)block;
+
 /**
  Creates a subscription for location updates that will execute the block once per update indefinitely (until canceled), regardless of the accuracy of each location.
  This method instructs location services to use the highest accuracy available (which also requires the most power).
@@ -95,6 +106,8 @@ NS_ASSUME_NONNULL_BEGIN
  @return The location request ID, which can be used to cancel the subscription of location updates to this block.
  */
 - (INTULocationRequestID)subscribeToLocationUpdatesWithBlock:(INTULocationRequestBlock)block;
+
+- (INTULocationRequestID)subscribeToLocationPlacemarkUpdatesWithBlock:(INTULocationPlacemarkRequestBlock)block;
 
 /**
  Creates a subscription for location updates that will execute the block once per update indefinitely (until canceled), regardless of the accuracy of each location.
@@ -111,6 +124,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (INTULocationRequestID)subscribeToLocationUpdatesWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
                                                                  block:(INTULocationRequestBlock)block;
 
+- (INTULocationRequestID)subscribeToLocationPlacemarkUpdatesWithDesiredAccuracy:(INTULocationAccuracy)desiredAccuracy
+                                                                          block:(INTULocationPlacemarkRequestBlock)block;
+
 /**
  Creates a subscription for significant location changes that will execute the block once per change indefinitely (until canceled).
  If an error occurs, the block will execute with a status other than INTULocationStatusSuccess, and the subscription will be canceled automatically.
@@ -121,6 +137,8 @@ NS_ASSUME_NONNULL_BEGIN
  @return The location request ID, which can be used to cancel the subscription of significant location changes to this block.
  */
 - (INTULocationRequestID)subscribeToSignificantLocationChangesWithBlock:(INTULocationRequestBlock)block;
+
+- (INTULocationRequestID)subscribeToSignificantLocationPlacemarkChangesWithBlock:(INTULocationPlacemarkRequestBlock)block;
 
 /** Immediately forces completion of the location request with the given requestID (if it exists), and executes the original request block with the results.
     For one-time location requests, this is effectively a manual timeout, and will result in the request completing with status INTULocationStatusTimedOut.
@@ -141,6 +159,8 @@ NS_ASSUME_NONNULL_BEGIN
  @return The heading request ID, which can be used to cancel the subscription of heading updates to this block.
  */
 - (INTUHeadingRequestID)subscribeToHeadingUpdatesWithBlock:(INTUHeadingRequestBlock)block;
+
+- (void)reverseGeocodeLocation:(CLLocation *)location completionHandler:(void (^)(CLLocation *location, NSArray<CLPlacemark *> * _Nullable placemarks, NSError * _Nullable error))handler;
 
 /** Immediately cancels the heading subscription request with the given requestID (if it exists), without executing the original request block. */
 - (void)cancelHeadingRequest:(INTUHeadingRequestID)requestID;
